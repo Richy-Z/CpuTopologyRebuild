@@ -211,7 +211,7 @@ static void rebuild_cluster_topology(void) {
 
         cpu->lnum = 0;
         cpu->core->cluster_num = cluster;
-        pu->core->lcore_num = cpu->core->pcore_num = p0_count + i;
+        cpu->core->lcore_num = cpu->core->pcore_num = p0_count + i;
         cpu->core->num_lcpus = 1;
         cpu->core->lcpus = cpu;
 
