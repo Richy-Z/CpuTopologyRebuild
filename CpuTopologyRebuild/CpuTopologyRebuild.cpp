@@ -24,6 +24,8 @@ Cluster pClusters[P_CORE_MAX_COUNT]; // P-Core clusters
 x86_lcpu_t *e0_cpus[E_CORE_MAX_COUNT]; // E-Cores
 int pClusterCount, e0_count;
 
+int e_core_first = -1;
+
 extern "C" void x86_validate_topology(void);
 
 static void print_cache_info(x86_cpu_cache_t *cache) {
