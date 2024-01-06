@@ -58,12 +58,12 @@ static void print_cache_topology(void) {
     int cache_count = 0;
 
     DBGLOG("ctr", "Cache info:");
-    for (int i=2; i>=0; --i) { // LLC->L2->L1
+    for (int i = 2; i >= 0; --i) { // LLC->L2->L1
         cpu = pkg->lcpus;
         while (cpu != nullptr) {
             cache = cpu->caches[i];
             bool new_cache = true;
-            for (int j=0; j<cache_count; ++j) {
+            for (int j = 0; j < cache_count; ++j) {
                 if (cache == caches[j]) {
                     new_cache = false;
                     break;
@@ -89,7 +89,7 @@ static void print_cpu_topology(void) {
         DBGLOG("ctr", "  Core(p/l): %d/%d (lcpus: %d)", core->pcore_num, core->lcore_num, core->num_lcpus);
         cpu = core->lcpus;
         while (cpu != nullptr) {
-            const char *type = cpu->pnum < e_core_first ? cpu->pnum % 2 == 0 ? "P0" : "P1" : "E0";
+            const char *type = cpu->pnum < e_core_first ? (cpu->pnum % 2 == 0 ? "P0" : "P1") : "E0";
             DBGLOG("ctr", "    LCPU_%s(n/p/l): %2d/%2d/%d", type, cpu->cpu_num, cpu->pnum, cpu->lnum);
             cpu = cpu->next_in_core;
         }
@@ -113,7 +113,7 @@ static void load_cpus(void) {
         }
         cpu = cpu->next_in_pkg;
     }
-    for (int i=0; i<count; ++i) {
+    for (int i = 0; i < count; ++i) {
         cpu = cpus_reverse[count - 1 - i];
         if (cpu->pnum < e_core_first) { // P-Core
             if (cpu->pnum % 2 == 0) { // primary
@@ -139,13 +139,13 @@ static void rebuild_cache_topology(void) {
     // E-Core fix
     x86_lcpu_t *e_primary;
 
-    for (int i=0; i<(e0_count/4); ++i) {
-        e_primary = e0_cpus[i*4];
+    for (int i = 0; i < (e0_count / 4); ++i) {
+        e_primary = e0_cpus[i * 4];
         e_primary->caches[0]->cache_size = 64 * 1024; // 64KB
         l2 = e_primary->caches[1];
         l2->cache_size = 2 * 1024 * 1024; // 2MB
-        for (int j=1; j<4; ++j) {
-            cpu = e0_cpus[i*4+j];
+        for (int j = 1; j < 4; ++j) {
+            cpu = e0_cpus[i * 4 + j];
             cpu->caches[0]->cache_size = 64 * 1024; // 64KB
             cpu->caches[1] = l2;
             l2->cpus[j] = cpu;
@@ -157,7 +157,7 @@ static void rebuild_cache_topology(void) {
     x86_lcpu_t *p0;
     x86_lcpu_t *p1;
 
-    for (int i=0; i<p1_count; ++i) {
+    for (int i = 0; i < p1_count; ++i) {
         p0 = p0_cpus[i];
         p1 = p1_cpus[i];
         l1 = p0->caches[0];
@@ -171,31 +171,33 @@ static void rebuild_cache_topology(void) {
     }
 }
 
+static void setClusterProperty(x86_lcpu_t *cpu, int cluster) {
+    cpu->setProperty("Cluster", OSString::withCString(std::to_string(cluster).c_str()));
+}
+
 static void rebuild_cluster_topology(void) {
     x86_lcpu_t *cpu;
-    x86_core_t *core;
 
     // Original performance core handling with added cluster support
     for (int i = 0; i < p0_count; ++i) {
         cpu = p0_cpus[i];
         cpu->lnum = 0;
-        core = cpu->core;
 
         // Determine cluster based on index
         int cluster = (i < p0_count / 2) ? 1 : 2;
 
         // Modify the behavior for Performance Cores in Cluster 1
         if (cluster == 1) {
-            cpu->setProperty("Cluster", "1");
+            setClusterProperty(cpu, 1);
         }
 
-        core->cluster_num = cluster;
-        core->lcore_num = core->pcore_num = i;
-        core->num_lcpus = 1;
-        core->lcpus = cpu;
+        cpu->core->cluster_num = cluster;
+        cpu->core->lcore_num = cpu->core->pcore_num = i;
+        cpu->core->num_lcpus = 1;
+        cpu->core->lcpus = cpu;
 
         if (i != 0) {
-            core->next_in_pkg = core->next_in_die = p0_cpus[i - 1]->core;
+            cpu->core->next_in_pkg = cpu->core->next_in_die = p0_cpus[i - 1]->core;
         }
     }
 
@@ -207,7 +209,7 @@ static void rebuild_cluster_topology(void) {
         int cluster = 2;
 
         // Modify the behavior for Efficiency Cores in Cluster 2
-        cpu->setProperty("Cluster", "2");
+        setClusterProperty(cpu, 2);
 
         cpu->lnum = 0;
         cpu->core->cluster_num = cluster;
@@ -254,7 +256,7 @@ static void rebuild_cpu_topology(void) {
 
         // Modify the behavior for Performance Cores in Cluster 1
         if (cluster == 1) {
-            cpu->setProperty("Cluster", "1");
+            setClusterProperty(cpu, 1);
         }
 
         core->cluster_num = cluster;
@@ -273,7 +275,7 @@ static void rebuild_cpu_topology(void) {
         core = p0_cpus[i]->core;
 
         // Modify the behavior for Hyper-Threaded Cores in Cluster 1
-        cpu->setProperty("Cluster", "1");
+        setClusterProperty(cpu, 1);
 
         cpu->lnum = core->num_lcpus++;
         cpu->core = core;
@@ -282,29 +284,8 @@ static void rebuild_cpu_topology(void) {
     }
 
     // Efficiency core handling with added cluster support
-    for (int i = 0; i < e0_count; ++i) {
-        cpu = e0_cpus[i];
-
-        // Determine cluster for efficiency cores (always Cluster 2)
-        int cluster = 2;
-
-        // Modify the behavior for Efficiency Cores in Cluster 2
-        cpu->setProperty("Cluster", "2");
-
-        if (smt_spoof) {
-            core = p0_cpus[i % p0_count]->core;
-            cpu->core = core;
-            cpu->lnum = core->num_lcpus++;
-            cpu->next_in_core = core->lcpus;
-            core->lcpus = cpu;
-        } else {
-            cpu->core->lcore_num = cpu->core->pcore_num = p0_count + i;
-        }
-    }
-
-    rebuild_cache_topology();
+    rebuild_cluster_topology();
 }
-
 
 void my_x86_validate_topology(void) {
     load_cpus();
