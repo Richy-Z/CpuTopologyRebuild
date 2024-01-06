@@ -1,5 +1,8 @@
 CpuTopologyRebuild Changelog
 ===================
+#### v2.0.0
+- Implemented experimental CPU cluster support for testing with the Darwin kernel
+
 #### v1.1.0
 - "Total Number of Cores" in System Profiler is displayed correctly ( #8 )
 
