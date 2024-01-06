@@ -3,7 +3,6 @@
 
 #include "CpuTopologyRebuild.h"
 #include <i386/cpu_topology.h>
-// #include <i386/cpuid.h>
 #include <Headers/kern_api.hpp>
 #include <Headers/kern_patcher.hpp>
 #include <Headers/kern_version.hpp>
@@ -172,6 +171,56 @@ static void rebuild_cache_topology(void) {
     }
 }
 
+static void rebuild_cluster_topology(void) {
+    x86_lcpu_t *cpu;
+    x86_core_t *core;
+
+    // Original performance core handling with added cluster support
+    for (int i = 0; i < p0_count; ++i) {
+        cpu = p0_cpus[i];
+        cpu->lnum = 0;
+        core = cpu->core;
+
+        // Determine cluster based on index
+        int cluster = (i < p0_count / 2) ? 1 : 2;
+
+        // Modify the behavior for Performance Cores in Cluster 1
+        if (cluster == 1) {
+            cpu->setProperty("Cluster", "1");
+        }
+
+        core->cluster_num = cluster;
+        core->lcore_num = core->pcore_num = i;
+        core->num_lcpus = 1;
+        core->lcpus = cpu;
+
+        if (i != 0) {
+            core->next_in_pkg = core->next_in_die = p0_cpus[i - 1]->core;
+        }
+    }
+
+    // Efficiency core handling with added cluster support
+    for (int i = 0; i < e0_count; ++i) {
+        cpu = e0_cpus[i];
+
+        // Determine cluster for efficiency cores (always Cluster 2)
+        int cluster = 2;
+
+        // Modify the behavior for Efficiency Cores in Cluster 2
+        cpu->setProperty("Cluster", "2");
+
+        cpu->lnum = 0;
+        cpu->core->cluster_num = cluster;
+        pu->core->lcore_num = cpu->core->pcore_num = p0_count + i;
+        cpu->core->num_lcpus = 1;
+        cpu->core->lcpus = cpu;
+
+        if (i != 0) {
+            cpu->core->next_in_pkg = cpu->core->next_in_die = e0_cpus[i - 1]->core;
+        }
+    }
+}
+
 static void rebuild_cpu_topology(void) {
     // do nothing if E-Cores disabled
     if (e0_count == 0) return;
@@ -181,42 +230,67 @@ static void rebuild_cpu_topology(void) {
     x86_core_t *core;
     x86_lcpu_t *cpu;
 
-    // i386_cpu_info_t *info = cpuid_info();
     x86_core_t *p_core_last = p0_cpus[p0_count - 1]->core;
+
     if (smt_spoof) {
         pkg->cores = die->cores = p_core_last;
         die->num_cores = p0_count;
         machine_info.physical_cpu_max = p0_count;
-        // info->core_count = p0_count;
     } else {
         core = e0_cpus[0]->core;
         core->next_in_die = core->next_in_pkg = p_core_last;
         die->num_cores = p0_count + e0_count;
         machine_info.physical_cpu_max = p0_count + e0_count;
-        // info->core_count = p0_count + e0_count;
     }
 
-    for (int i=0; i<p0_count; ++i) {
+    // Original performance core handling with added cluster support
+    for (int i = 0; i < p0_count; ++i) {
         cpu = p0_cpus[i];
         cpu->lnum = 0;
         core = cpu->core;
+
+        // Determine cluster based on index
+        int cluster = (i < p0_count / 2) ? 1 : 2;
+
+        // Modify the behavior for Performance Cores in Cluster 1
+        if (cluster == 1) {
+            cpu->setProperty("Cluster", "1");
+        }
+
+        core->cluster_num = cluster;
         core->lcore_num = core->pcore_num = i;
         core->num_lcpus = 1;
         core->lcpus = cpu;
+
         if (i != 0) {
-            core->next_in_pkg = core->next_in_die = p0_cpus[i-1]->core;
+            core->next_in_pkg = core->next_in_die = p0_cpus[i - 1]->core;
         }
     }
-    for (int i=0; i<p1_count; ++i) {
+
+    // Hyper-Threaded core handling with added cluster support
+    for (int i = 0; i < p1_count; ++i) {
         cpu = p1_cpus[i];
         core = p0_cpus[i]->core;
+
+        // Modify the behavior for Hyper-Threaded Cores in Cluster 1
+        cpu->setProperty("Cluster", "1");
+
         cpu->lnum = core->num_lcpus++;
         cpu->core = core;
         cpu->next_in_core = core->lcpus;
         core->lcpus = cpu;
     }
-    for (int i=0; i<e0_count; ++i) {
+
+    // Efficiency core handling with added cluster support
+    for (int i = 0; i < e0_count; ++i) {
         cpu = e0_cpus[i];
+
+        // Determine cluster for efficiency cores (always Cluster 2)
+        int cluster = 2;
+
+        // Modify the behavior for Efficiency Cores in Cluster 2
+        cpu->setProperty("Cluster", "2");
+
         if (smt_spoof) {
             core = p0_cpus[i % p0_count]->core;
             cpu->core = core;
@@ -230,6 +304,7 @@ static void rebuild_cpu_topology(void) {
 
     rebuild_cache_topology();
 }
+
 
 void my_x86_validate_topology(void) {
     load_cpus();
